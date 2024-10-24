@@ -4,17 +4,22 @@ import csv
 import time
 import random
 import json
+from fake_useragent import UserAgent  # Import fake_useragent
+
+# Initialize the UserAgent object to get random user agents
+ua = UserAgent()
 
 # URL of the base search page
 base_url = "https://www.goudengids.nl/nl/zoeken/Accountants/"
 
-# Custom headers to mimic browser behavior
-headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
-
 # Function to scrape a single page
 def scrape_page(url):
     try:
+        # Use a random user agent for each request
+        headers = {
+            'User-Agent': ua.random
+        }
+        
         response = requests.get(url, headers=headers)
         response.raise_for_status()  # Raise an exception for bad status codes
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -51,11 +56,16 @@ def scrape_page(url):
                 # Extract website if available (use placeholder for now)
                 website = "N/A"  # Modify this to extract if needed
 
+                # Extract email address
+                email_tag = listing.select_one('div[data-js-event="email"]')
+                email = email_tag.get('data-js-value') if email_tag else "N/A"
+                
                 # Add to scraped data
                 scraped_data.append({
                     'name': name,
                     'address': address,
                     'phone': phone,
+                    'email': email,  # Include email in the output
                     'website': website
                 })
             
@@ -91,7 +101,7 @@ def scrape_multiple_pages(num_pages):
 # Save to CSV
 def save_to_csv(scraped_data, filename="output.csv"):
     with open(filename, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=['name', 'address', 'phone', 'website'])
+        writer = csv.DictWriter(file, fieldnames=['name', 'address', 'phone', 'email', 'website'])
         writer.writeheader()
         for data in scraped_data:
             writer.writerow(data)
