@@ -1,93 +1,104 @@
 import requests
 from bs4 import BeautifulSoup
 import csv
+import time
+import random
 import json
 
-# Base URL of accountants directory
-base_url = 'https://www.goudengids.nl/nl/bedrijven/accountants/'
+# URL of the base search page
+base_url = "https://www.goudengids.nl/nl/zoeken/Accountants/"
 
-# User-Agent to simulate a browser request
+# Custom headers to mimic browser behavior
 headers = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36'
-}
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
 
-# Function to extract contact info from the listing
-def extract_contact_info(listing):
-    contact_info = {}
-    
-    # Extracting company name
-    name_tag = listing.find('h2', class_='text-5 font-bold mb-2 is-paid')
-    if name_tag:
-        contact_info['name'] = name_tag.get_text(strip=True)
-
-    # Extracting address components
-    address_tag = listing.find('li', itemprop='address')
-    if address_tag:
-        street = address_tag.find("span", {"data-yext": "street"})
-        postal_code = address_tag.find("span", {"data-yext": "postal-code"})
-        city = address_tag.find("span", {"data-yext": "city"})
+# Function to scrape a single page
+def scrape_page(url):
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        contact_info['street'] = street.get_text(strip=True) if street else ''
-        contact_info['postal_code'] = postal_code.get_text(strip=True) if postal_code else ''
-        contact_info['city'] = city.get_text(strip=True) if city else ''
+        # Locate the listings
+        listings = soup.find_all('li', class_='result-item')  # Adjust class if needed
+        
+        scraped_data = []
+        
+        for listing in listings:
+            try:
+                # Extract company name
+                name_tag = listing.select_one('h2[itemprop="name"]')
+                name = name_tag.get_text(strip=True) if name_tag else "N/A"
+                
+                # Extract phone number from data attribute
+                data_small_result = listing.get('data-small-result')
+                if data_small_result:
+                    data_json = json.loads(data_small_result)
+                    phone = data_json.get('phone', 'N/A')
+                else:
+                    phone = "N/A"
+                
+                # Extract address details
+                address_tag = listing.select_one('li[itemprop="address"]')
+                if address_tag:
+                    street = address_tag.select_one('span[data-yext="street"]').get_text(strip=True)
+                    postal_code = address_tag.select_one('span[data-yext="postal-code"]').get_text(strip=True)
+                    city = address_tag.select_one('span[data-yext="city"]').get_text(strip=True)
+                    address = f"{street}, {postal_code} {city}"
+                else:
+                    address = "N/A"
+                
+                # Extract website if available (use placeholder for now)
+                website = "N/A"  # Modify this to extract if needed
+
+                # Add to scraped data
+                scraped_data.append({
+                    'name': name,
+                    'address': address,
+                    'phone': phone,
+                    'website': website
+                })
+            
+            except Exception as e:
+                print(f"Error extracting data for a listing: {e}")
+                continue
+        
+        return scraped_data
     
-    # Extracting phone number from data-small-result attribute
-    data_small_result = listing['data-small-result']
-    small_result = json.loads(data_small_result)
-    contact_info['phone'] = small_result.get('phone', '')
-
-    # Extracting the company website (if available)
-    contact_info['website'] = 'https://www.goudengids.nl' + listing['data-href']
-
-    return contact_info
-
-# Function to scrape all accountant listings
-def scrape_accountants(base_url):
-    # Send request to the base URL with headers
-    response = requests.get(base_url, headers=headers)
-    if response.status_code != 200:
-        print(f"Failed to retrieve the page. Status code: {response.status_code}")
+    except Exception as e:
+        print(f"Error scraping page {url}: {e}")
         return []
 
-    # Parse the page with BeautifulSoup
-    soup = BeautifulSoup(response.content, 'html.parser')
+# Function to scrape multiple pages
+def scrape_multiple_pages(num_pages):
+    all_data = []
+    
+    for page_num in range(1, num_pages + 1):
+        page_url = f"{base_url}?page={page_num}"
+        print(f"Scraping page: {page_url}")
+        data = scrape_page(page_url)
+        
+        if data:
+            all_data.extend(data)
+        
+        # Implement random wait time to avoid getting blocked
+        wait_time = random.uniform(3, 7)
+        print(f"Waiting for {wait_time:.2f} seconds before scraping the next page...")
+        time.sleep(wait_time)
+    
+    return all_data
 
-    # Find all accountant listing blocks
-    accountant_listings = soup.find_all('li', class_='result-item')
-
-    # List to store all contact data
-    contact_data = []
-
-    # Loop through each accountant listing
-    for listing in accountant_listings:
-        contact_info = extract_contact_info(listing)
-        if contact_info:
-            contact_data.append(contact_info)
-
-    return contact_data
-
-# Function to save contact data to CSV
-def save_to_csv(contact_data, filename='accountants_contacts.csv'):
-    # Define CSV headers
-    headers = ['name', 'street', 'postal_code', 'city', 'phone', 'website']
-
-    # Writing to CSV file
+# Save to CSV
+def save_to_csv(scraped_data, filename="output.csv"):
     with open(filename, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=headers)
-        writer.writeheader()  # Writing header
-        for contact in contact_data:
-            writer.writerow(contact)
+        writer = csv.DictWriter(file, fieldnames=['name', 'address', 'phone', 'website'])
+        writer.writeheader()
+        for data in scraped_data:
+            writer.writerow(data)
 
-    print(f"Data successfully saved to {filename}")
-
-# Main script execution
-if __name__ == "__main__":
-    # Scrape accountants' contact info
-    all_contact_data = scrape_accountants(base_url)
-
-    # Save scraped data to CSV
-    if all_contact_data:
-        save_to_csv(all_contact_data)
-    else:
-        print("No contact data found.")
+# Example usage
+num_pages_to_scrape = 5  # Change this to scrape the desired number of pages
+scraped_data = scrape_multiple_pages(num_pages_to_scrape)
+save_to_csv(scraped_data)
+print("Scraping complete. Data saved to output.csv")
 
