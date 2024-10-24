@@ -106,9 +106,20 @@ def save_to_csv(scraped_data, filename="output.csv"):
         for data in scraped_data:
             writer.writerow(data)
 
-# Example usage
-num_pages_to_scrape = 5  # Change this to scrape the desired number of pages
-scraped_data = scrape_multiple_pages(num_pages_to_scrape)
-save_to_csv(scraped_data)
-print("Scraping complete. Data saved to output.csv")
+# Main script
+if __name__ == "__main__":
+    # Ask the user how many pages to scrape
+    try:
+        num_pages_to_scrape = int(input("Enter the number of pages you want to scrape: "))
+        
+        # Scrape the data
+        scraped_data = scrape_multiple_pages(num_pages_to_scrape)
+        
+        # Save the data to a CSV file
+        save_to_csv(scraped_data)
+        
+        print("Scraping complete. Data saved to output.csv")
+    
+    except ValueError:
+        print("Please enter a valid number.")
 
