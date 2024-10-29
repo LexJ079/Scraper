@@ -9,9 +9,6 @@ from fake_useragent import UserAgent  # Import fake_useragent
 # Initialize the UserAgent object to get random user agents
 ua = UserAgent()
 
-# URL of the base search page
-base_url = "https://www.goudengids.nl/nl/zoeken/Accountants/"
-
 # Function to scrape a single page
 def scrape_page(url):
     try:
@@ -80,8 +77,9 @@ def scrape_page(url):
         return []
 
 # Function to scrape multiple pages
-def scrape_multiple_pages(num_pages):
+def scrape_multiple_pages(category, num_pages):
     all_data = []
+    base_url = f"https://www.goudengids.nl/nl/zoeken/{category}/"
     
     for page_num in range(1, num_pages + 1):
         page_url = f"{base_url}?page={page_num}"
@@ -108,12 +106,13 @@ def save_to_csv(scraped_data, filename="output.csv"):
 
 # Main script
 if __name__ == "__main__":
-    # Ask the user how many pages to scrape
+    # Ask the user for the category and number of pages to scrape
     try:
+        category = input("Enter the category of company to scrape (e.g., Accountants, Aannemers): ").strip()
         num_pages_to_scrape = int(input("Enter the number of pages you want to scrape: "))
         
         # Scrape the data
-        scraped_data = scrape_multiple_pages(num_pages_to_scrape)
+        scraped_data = scrape_multiple_pages(category, num_pages_to_scrape)
         
         # Save the data to a CSV file
         save_to_csv(scraped_data)
@@ -121,5 +120,5 @@ if __name__ == "__main__":
         print("Scraping complete. Data saved to output.csv")
     
     except ValueError:
-        print("Please enter a valid number.")
+        print("Please enter a valid number for the number of pages.")
 
