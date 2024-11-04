@@ -23,7 +23,6 @@ pyinstaller==6.11.0
 pyinstaller-hooks-contrib==2024.9
 requests==2.32.3
 setuptools==75.2.0
-simpleaudio @ git+https://github.com/cexen/py-simple-audio.git@6a7cb95c5af4537bad72bad9b190e09cb6d7883c
 six==1.16.0
 soupsieve==2.6
 stack-data==0.6.3

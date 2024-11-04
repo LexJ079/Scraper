@@ -77,11 +77,11 @@ def scrape_page(url):
         return []
 
 # Function to scrape multiple pages
-def scrape_multiple_pages(category, num_pages):
+def scrape_multiple_pages(category, start_page, num_pages):
     all_data = []
     base_url = f"https://www.goudengids.nl/nl/zoeken/{category}/"
     
-    for page_num in range(1, num_pages + 1):
+    for page_num in range(start_page, start_page + num_pages):
         page_url = f"{base_url}?page={page_num}"
         print(f"Scraping page: {page_url}")
         data = scrape_page(page_url)
@@ -97,28 +97,31 @@ def scrape_multiple_pages(category, num_pages):
     return all_data
 
 # Save to CSV
-def save_to_csv(scraped_data, filename="output.csv"):
+def save_to_csv(scraped_data, category, start_page, end_page):
+    filename = f"{category}_pages_{start_page}_to_{end_page}.csv".replace(" ", "_")
     with open(filename, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.DictWriter(file, fieldnames=['name', 'address', 'phone', 'email', 'website'])
         writer.writeheader()
         for data in scraped_data:
             writer.writerow(data)
+    print(f"Data saved to {filename}")
 
 # Main script
 if __name__ == "__main__":
-    # Ask the user for the category and number of pages to scrape
+    # Ask the user for the category, start page, and number of pages to scrape
     try:
         category = input("Enter the category of company to scrape (e.g., Accountants, Aannemers): ").strip()
+        start_page = int(input("Enter the starting page number: "))
         num_pages_to_scrape = int(input("Enter the number of pages you want to scrape: "))
         
         # Scrape the data
-        scraped_data = scrape_multiple_pages(category, num_pages_to_scrape)
+        scraped_data = scrape_multiple_pages(category, start_page, num_pages_to_scrape)
         
         # Save the data to a CSV file
-        save_to_csv(scraped_data)
+        save_to_csv(scraped_data, category, start_page, start_page + num_pages_to_scrape - 1)
         
-        print("Scraping complete. Data saved to output.csv")
+        print("Scraping complete.")
     
     except ValueError:
-        print("Please enter a valid number for the number of pages.")
+        print("Please enter a valid number for the starting page and number of pages.")
 
