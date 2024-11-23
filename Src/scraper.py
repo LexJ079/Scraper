@@ -16,7 +16,9 @@ BRIGHT_DATA_USERNAME = "brd-customer-hl_a081c981-zone-isp_proxy1"
 BRIGHT_DATA_PASSWORD = "kq5qh08tb54h"
 
 # Function to scrape a single page with retry logic
-def scrape_page(url, retries=2):
+def scrape_page(url, retries=2, seen_names=None):
+    if seen_names is None:
+        seen_names = set()
     attempt = 0
     while attempt <= retries:
         try:
@@ -47,6 +49,11 @@ def scrape_page(url, retries=2):
                     name_tag = listing.select_one('h2[itemprop="name"]')
                     name = name_tag.get_text(strip=True) if name_tag else "N/A"
                     
+                    # Skip duplicate company names
+                    if name in seen_names:
+                        continue
+                    seen_names.add(name)
+                    
                     # Extract phone number from data attribute (in JSON format)
                     data_small_result = listing.get('data-small-result')
                     if data_small_result:
@@ -65,12 +72,6 @@ def scrape_page(url, retries=2):
                     else:
                         address = "N/A"
                     
-                    # Extract website if available
-                    website = "N/A"
-                    website_tag = listing.select_one('a[itemprop="url"]')
-                    if website_tag:
-                        website = website_tag.get('href')
-                    
                     # Extract email address
                     email_tag = listing.select_one('div[data-js-event="email"]')
                     email = email_tag.get('data-js-value') if email_tag else "N/A"
@@ -80,15 +81,14 @@ def scrape_page(url, retries=2):
                         'name': name,
                         'address': address,
                         'phone': phone,
-                        'email': email,
-                        'website': website
+                        'email': email
                     })
                 
                 except Exception as e:
                     print(f"Error extracting data for a listing: {e}")
                     continue
             
-            return scraped_data  # Return data if successful
+            return scraped_data, seen_names  # Return data if successful
 
         except requests.exceptions.RequestException as e:
             print(f"Error scraping page {url}: {e}")
@@ -100,17 +100,18 @@ def scrape_page(url, retries=2):
                 break  # Exit for other exceptions
     
     print(f"Failed to scrape page {url} after {retries + 1} attempts.")
-    return []
+    return [], seen_names
 
 # Function to scrape multiple pages
 def scrape_multiple_pages(category, start_page, num_pages):
     all_data = []
     base_url = f"https://www.goudengids.nl/nl/zoeken/{category}/"
+    seen_names = set()
     
     for page_num in range(start_page, start_page + num_pages):
         page_url = f"{base_url}?page={page_num}"
         print(f"Scraping page: {page_url}")
-        data = scrape_page(page_url)
+        data, seen_names = scrape_page(page_url, seen_names=seen_names)
         
         if data:
             all_data.extend(data)
@@ -122,27 +123,56 @@ def scrape_multiple_pages(category, start_page, num_pages):
     
     return all_data
 
-# Save to CSV
+# Save to CSV files
 def save_to_csv(scraped_data, category, start_page, end_page):
     # Create the folder if it doesn't exist
-    folder_name = "Collected Data"
-    if not os.path.exists(folder_name):
-        os.makedirs(folder_name)
+    base_folder = "Collected Data"
+    if not os.path.exists(base_folder):
+        os.makedirs(base_folder)
+
+    # Create subfolders for each data type
+    subfolders = {
+        "all_data": os.path.join(base_folder, "All Data"),
+        "phones": os.path.join(base_folder, "Phone Numbers"),
+        "emails": os.path.join(base_folder, "Emails"),
+        "addresses": os.path.join(base_folder, "Addresses")
+    }
     
-    # Define the file path
-    filename = os.path.join(
-        folder_name,
-        f"{category}_pages_{start_page}_to_{end_page}.csv".replace(" ", "_")
+    for folder in subfolders.values():
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+    
+    # Save combined data file
+    all_data_file = os.path.join(
+        subfolders["all_data"],
+        f"{category}_pages_{start_page}_to_{end_page}_all_data.csv".replace(" ", "_")
     )
-    
-    # Save the data to the file
-    with open(filename, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=['name', 'address', 'phone', 'email', 'website'])
+    with open(all_data_file, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=['name', 'address', 'phone', 'email'])
         writer.writeheader()
         for data in scraped_data:
             writer.writerow(data)
-    
-    print(f"Data saved to {filename}")
+    print(f"All data saved to {all_data_file}")
+
+    # Save individual data files
+    def save_individual_file(data_type, fieldname, subfolder):
+        file_path = os.path.join(
+            subfolders[subfolder],
+            f"{category}_pages_{start_page}_to_{end_page}_{data_type}.csv".replace(" ", "_")
+        )
+        with open(file_path, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.DictWriter(file, fieldnames=['name', fieldname])
+            writer.writeheader()
+            for data in scraped_data:
+                writer.writerow({
+                    'name': data['name'],
+                    fieldname: data[fieldname]
+                })
+        print(f"{data_type.capitalize()} data saved to {file_path}")
+
+    save_individual_file("phone", "phone", "phones")
+    save_individual_file("email", "email", "emails")
+    save_individual_file("address", "address", "addresses")
 
 # Main script
 if __name__ == "__main__":
@@ -155,7 +185,7 @@ if __name__ == "__main__":
         # Scrape the data
         scraped_data = scrape_multiple_pages(category, start_page, num_pages_to_scrape)
         
-        # Save the data to a CSV file
+        # Save the data to CSV files
         save_to_csv(scraped_data, category, start_page, start_page + num_pages_to_scrape - 1)
         
         print("Scraping complete.")
