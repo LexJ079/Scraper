@@ -5,18 +5,18 @@ import csv
 import time
 import random
 import json
-from fake_useragent import UserAgent  # Import fake_useragent
+from fake_useragent import UserAgent
 
 # Initialize the UserAgent object to get random user agents
 ua = UserAgent()
 
 # Bright Data ISP Proxy Configuration
+BRIGHT_DATA_USERNAME = os.getenv("BRIGHT_DATA_USERNAME", "brd-customer-hl_a081c981-zone-isp_proxy1")
+BRIGHT_DATA_PASSWORD = os.getenv("BRIGHT_DATA_PASSWORD", "kq5qh08tb54h")
 BRIGHT_DATA_PROXY = "http://brd.superproxy.io:22225"
-BRIGHT_DATA_USERNAME = "brd-customer-hl_a081c981-zone-isp_proxy1"
-BRIGHT_DATA_PASSWORD = "kq5qh08tb54h"
 
 # Function to scrape a single page with retry logic
-def scrape_page(url, retries=2, seen_names=None):
+def scrape_page(url, retries=3, seen_names=None):
     if seen_names is None:
         seen_names = set()
     attempt = 0
@@ -24,7 +24,10 @@ def scrape_page(url, retries=2, seen_names=None):
         try:
             # Use a random user agent for each request
             headers = {
-                'User-Agent': ua.random
+                'User-Agent': ua.random,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Connection': 'keep-alive',
             }
 
             # Define proxy with authentication
@@ -32,28 +35,28 @@ def scrape_page(url, retries=2, seen_names=None):
                 "http": f"http://{BRIGHT_DATA_USERNAME}:{BRIGHT_DATA_PASSWORD}@brd.superproxy.io:22225",
                 "https": f"http://{BRIGHT_DATA_USERNAME}:{BRIGHT_DATA_PASSWORD}@brd.superproxy.io:22225",
             }
-            
+
             # Make the request with proxies
             response = requests.get(url, headers=headers, proxies=proxies)
             response.raise_for_status()  # Raise an exception for bad status codes
             soup = BeautifulSoup(response.text, 'html.parser')
-            
+
             # Locate the listings
             listings = soup.find_all('li', class_='result-item')  # Adjust class if needed
-            
+
             scraped_data = []
-            
+
             for listing in listings:
                 try:
                     # Extract company name
                     name_tag = listing.select_one('h2[itemprop="name"]')
                     name = name_tag.get_text(strip=True) if name_tag else "N/A"
-                    
+
                     # Skip duplicate company names
                     if name in seen_names:
                         continue
                     seen_names.add(name)
-                    
+
                     # Extract phone number from data attribute (in JSON format)
                     data_small_result = listing.get('data-small-result')
                     if data_small_result:
@@ -61,7 +64,7 @@ def scrape_page(url, retries=2, seen_names=None):
                         phone = data_json.get('phone', 'N/A')
                     else:
                         phone = "N/A"
-                    
+
                     # Extract address details
                     address_tag = listing.select_one('li[itemprop="address"]')
                     if address_tag:
@@ -71,11 +74,11 @@ def scrape_page(url, retries=2, seen_names=None):
                         address = f"{street}, {postal_code} {city}"
                     else:
                         address = "N/A"
-                    
+
                     # Extract email address
                     email_tag = listing.select_one('div[data-js-event="email"]')
                     email = email_tag.get('data-js-value') if email_tag else "N/A"
-                    
+
                     # Add to scraped data
                     scraped_data.append({
                         'name': name,
@@ -83,22 +86,24 @@ def scrape_page(url, retries=2, seen_names=None):
                         'phone': phone,
                         'email': email
                     })
-                
+
                 except Exception as e:
                     print(f"Error extracting data for a listing: {e}")
                     continue
-            
+
             return scraped_data, seen_names  # Return data if successful
 
+        except requests.exceptions.ProxyError as e:
+            if "401 Auth Failed" in str(e) or "ip_blacklisted" in str(e):
+                print(f"Proxy authentication or IP issue: {e}. Retrying...")
+                attempt += 1
+                time.sleep(random.uniform(3, 5))
+                continue
         except requests.exceptions.RequestException as e:
             print(f"Error scraping page {url}: {e}")
-            if isinstance(e, requests.exceptions.HTTPError) and e.response.status_code == 403:
-                attempt += 1
-                print(f"403 Forbidden encountered. Retrying... Attempt {attempt} of {retries}.")
-                time.sleep(random.uniform(3, 5))  # Wait before retrying
-            else:
-                break  # Exit for other exceptions
-    
+            attempt += 1
+            time.sleep(random.uniform(3, 5))
+
     print(f"Failed to scrape page {url} after {retries + 1} attempts.")
     return [], seen_names
 
@@ -107,20 +112,20 @@ def scrape_multiple_pages(category, start_page, num_pages):
     all_data = []
     base_url = f"https://www.goudengids.nl/nl/zoeken/{category}/"
     seen_names = set()
-    
+
     for page_num in range(start_page, start_page + num_pages):
-        page_url = f"{base_url}?page={page_num}"
+        page_url = f"{base_url}{page_num}/"
         print(f"Scraping page: {page_url}")
         data, seen_names = scrape_page(page_url, seen_names=seen_names)
-        
+
         if data:
             all_data.extend(data)
-        
+
         # Implement random wait time to avoid getting blocked
         wait_time = random.uniform(3, 7)
         print(f"Waiting for {wait_time:.2f} seconds before scraping the next page...")
         time.sleep(wait_time)
-    
+
     return all_data
 
 # Save to CSV files
@@ -137,11 +142,11 @@ def save_to_csv(scraped_data, category, start_page, end_page):
         "emails": os.path.join(base_folder, "Emails"),
         "addresses": os.path.join(base_folder, "Addresses")
     }
-    
+
     for folder in subfolders.values():
         if not os.path.exists(folder):
             os.makedirs(folder)
-    
+
     # Save combined data file
     all_data_file = os.path.join(
         subfolders["all_data"],
@@ -176,20 +181,18 @@ def save_to_csv(scraped_data, category, start_page, end_page):
 
 # Main script
 if __name__ == "__main__":
-    # Ask the user for the category, start page, and number of pages to scrape
     try:
         category = input("Enter the category of company to scrape (e.g., Accountants, Aannemers): ").strip()
         start_page = int(input("Enter the starting page number: "))
         num_pages_to_scrape = int(input("Enter the number of pages you want to scrape: "))
-        
+
         # Scrape the data
         scraped_data = scrape_multiple_pages(category, start_page, num_pages_to_scrape)
-        
+
         # Save the data to CSV files
         save_to_csv(scraped_data, category, start_page, start_page + num_pages_to_scrape - 1)
-        
+
         print("Scraping complete.")
-    
     except ValueError:
         print("Please enter a valid number for the starting page and number of pages.")
 
