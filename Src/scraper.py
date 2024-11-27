@@ -195,4 +195,4 @@ if __name__ == "__main__":
         print("Scraping complete.")
     except ValueError:
         print("Please enter a valid number for the starting page and number of pages.")
-
+        
